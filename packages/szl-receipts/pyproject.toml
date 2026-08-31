@@ -1,0 +1,31 @@
+# szl-receipts — cryptographic receipt core for the SZL Holdings estate.
+#
+# This package is independently installable (`pip install -e packages/szl-receipts`)
+# and deliberately keeps its runtime dependency surface to a single, audited
+# cryptographic library. Everything else (RFC 8785 canonicalization, DSSE
+# envelope handling, chain verification) is implemented on the standard
+# library so the trust core stays reviewable end to end.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl-receipts"
+version = "14.0.0"
+description = "Cryptographic receipt core for the SZL Holdings estate: RFC 8785 JCS, DSSE/Ed25519, in-toto statements, hash-chained GovernedAction receipts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "SZL Holdings" }]
+keywords = ["receipts", "dsse", "in-toto", "rfc8785", "ed25519", "audit"]
+dependencies = ["cryptography>=42"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

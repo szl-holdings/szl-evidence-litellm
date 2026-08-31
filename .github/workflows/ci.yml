@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  test:
+    name: test (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install trust core first, then plugin
+        run: |
+          python -m pip install --disable-pip-version-check -e packages/szl-receipts
+          python -m pip install --disable-pip-version-check -e 'packages/szl-evidence-litellm[dev]'
+          python -m pip install --disable-pip-version-check pytest
+      - name: Test trust core
+        run: cd packages/szl-receipts && python -m pytest tests
+      - name: Test plugin
+        run: cd packages/szl-evidence-litellm && python -m pytest tests
+
+  dist:
+    name: build + hash distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build distributions and SHA256SUMS
+        run: |
+          python -m pip install --disable-pip-version-check build
+          python -m build --outdir dist/ packages/szl-receipts
+          python -m build --outdir dist/ packages/szl-evidence-litellm
+          cd dist && sha256sum * | tee SHA256SUMS.txt
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90

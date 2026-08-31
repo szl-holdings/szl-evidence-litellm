@@ -1,0 +1,58 @@
+# szl-evidence-litellm — tamper-evident DSSE receipts for every LiteLLM request.
+#
+# This package is independently installable:
+#     pip install -e packages/szl-receipts          # the trust core (sibling)
+#     pip install -e packages/szl-evidence-litellm  # this plugin
+#
+# Runtime dependencies are deliberately thin: the receipt core (which itself
+# depends only on `cryptography`) and `cryptography`. LiteLLM, FastAPI and
+# Uvicorn are OPTIONAL extras — the plugin degrades to a structural duck-type
+# when litellm is absent, and the demo proxy is only needed for the demo.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl-evidence-litellm"
+version = "0.1.0"
+description = "SZL Evidence Plane plugin for LiteLLM: hash-chained, DSSE-signed receipts for every LLM request via LiteLLM's callback system."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "SZL Holdings" }]
+keywords = ["litellm", "receipts", "dsse", "audit", "evidence", "otel", "genai"]
+# szl-receipts is a path/peer dependency: it is not published to an index, so
+# install the sibling editable FIRST (pip install -e packages/szl-receipts).
+# pip then sees the requirement satisfied and never reaches for the network.
+dependencies = ["szl-receipts", "cryptography>=42"]
+
+[project.optional-dependencies]
+litellm = ["litellm>=1.40"]
+proxy = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest"]
+
+[project.scripts]
+szl-evidence-litellm = "szl_evidence_litellm.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Package-local pytest config: when pytest is pointed at this package directly,
+# this ini wins over the workspace root. We keep the root's doctrine (depreca-
+# tions are errors) but carve out litellm's own third-party DeprecationWarnings,
+# which are not ours to fix and would otherwise fail the integration module.
+[tool.pytest.ini_options]
+addopts = "-q"
+filterwarnings = [
+    "error::DeprecationWarning",
+    "ignore::DeprecationWarning:litellm.*",
+    "ignore::DeprecationWarning:pydantic.*",
+    "ignore::DeprecationWarning:httpx.*",
+    "ignore::DeprecationWarning:openai.*",
+    "ignore::DeprecationWarning:jsonschema.*",
+    "ignore::DeprecationWarning:aiohttp.*",
+]

@@ -1,0 +1,41 @@
+# LiteLLM proxy wiring for the SZL evidence plugin.
+#
+# LiteLLM's proxy resolves `callbacks` entries of the form
+# "module.path.attribute" by importing the module and reading the attribute —
+# here, the prebuilt singleton `evidence_logger` from the plugin. The
+# singleton is created only when SZL_EVIDENCE_LOGGER=1 is set, so importing
+# the package elsewhere never spins up a sink as a side effect.
+#
+# Launch:
+#   SZL_EVIDENCE_LOGGER=1 \
+#   SZL_SINK_DIR=/var/lib/szl/evidence \
+#   SZL_FAIL_MODE=fail_closed \
+#   SZL_REQUIRE_RECEIPT=1 \
+#   litellm --config examples/litellm_config.yaml --port 4000
+#
+# Then:
+#   curl -s -X POST http://localhost:4000/v1/chat/completions \
+#     -H 'content-type: application/json' \
+#     -d '{"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hi"}]}'
+#
+#   python -m szl_evidence_litellm verify --sink /var/lib/szl/evidence
+#
+# Optional:
+#   SZL_CAPTURE_BODIES=1   write prompt/response bodies to bodies/<digest>.json
+#                          (OFF by default: the trail carries digests only)
+#   SZL_QUEUE_MAXSIZE=10000  bounded in-process queue bound
+
+model_list:
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  callbacks: szl_evidence_litellm.plugin.evidence_logger
+  # Retries and fallbacks are receipted per attempt by the deployment hooks:
+  num_retries: 2
+  fallbacks: [{ "gpt-3.5-turbo": ["gpt-4o-mini"] }]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
