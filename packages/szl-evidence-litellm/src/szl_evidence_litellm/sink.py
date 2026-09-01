@@ -281,9 +281,14 @@ class EvidenceSink:
         if flusher is not None and not flusher.done():
             flusher.cancel()
             try:
-                await flusher
+                async with asyncio.timeout(timeout_s):
+                    await flusher
             except asyncio.CancelledError:
                 pass
+            except TimeoutError as exc:
+                raise TimeoutError(
+                    f"sink flusher shutdown exceeded {timeout_s}s"
+                ) from exc
         self._worker_stop.set()
         worker = self._worker
         if worker is not None and worker.is_alive():
@@ -319,7 +324,11 @@ class EvidenceSink:
         while True:
             queue = self._require_queue()
             try:
-                first = await asyncio.wait_for(queue.get(), timeout=self.flush_interval_s)
+                # ``asyncio.wait_for`` can swallow an external cancellation on
+                # Python 3.11 when queue delivery races shutdown. The timeout
+                # context distinguishes its own deadline from aclose()'s cancel.
+                async with asyncio.timeout(self.flush_interval_s):
+                    first = await queue.get()
             except TimeoutError:
                 continue  # idle period: nothing signed, nothing to persist
             batch = [first]

@@ -6,7 +6,7 @@ private SZL Holdings monorepo, exported for public distribution.
 | Field | Value |
 |---|---|
 | Source repository | `szl-holdings/szl-platform` (private) |
-| Source revision | `16ebbc0cdaf348b95e6ac300cca58b1f0193f0b2` |
+| Source revision | `4f2b5f28f8c35daa81522d1dbc605f373df5b07c` |
 | Source paths | `packages/szl-receipts/`, `packages/szl-evidence-litellm/` |
 | Exported | 2026-08-31 |
 | Export method | `tar` copy excluding `__pycache__/`, `*.egg-info/`, `.pytest_cache/` |

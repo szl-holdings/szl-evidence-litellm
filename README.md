@@ -18,7 +18,7 @@ the SZL Holdings monorepo (`szl-platform`):
 | `szl-receipts` | 14.0.0 | Trust core: RFC 8785 JCS, chunked byte digests, DSSE/in-toto envelopes, Ed25519, hash-chained append-only ledger |
 | `szl-evidence-litellm` | 0.1.0 | The LiteLLM callback plugin: synchronous receipt construction, asynchronous bounded-queue persistence, explicit fail-open/fail-closed policy, per-attempt deployment capture, OpenTelemetry mapping |
 
-Provenance: byte-exact mirror of `szl-platform@16ebbc0cdaf348b95e6ac300cca58b1f0193f0b2`
+Provenance: byte-exact mirror of `szl-platform@4f2b5f28f8c35daa81522d1dbc605f373df5b07c`
 (2026-08-31). See [PROVENANCE.md](PROVENANCE.md). Development happens in the
 monorepo; this repo is the release surface.
 

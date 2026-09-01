@@ -124,7 +124,8 @@ class TestBackpressure:
             await asyncio.sleep(0.3)  # flusher drains
             sink.enqueue(make_pending(closed_policy, call_id="a-2"))
             sink.enqueue(make_pending(closed_policy, call_id="a-3"))
-            await sink.aclose()
+            async with asyncio.timeout(2.0):
+                await sink.aclose()
 
         _run(scenario())
         assert len(list(sink.iterate())) == 4
