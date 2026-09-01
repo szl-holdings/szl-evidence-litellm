@@ -1,0 +1,4 @@
+5446f45fd14c44d663d6755febd0747283da879d2c2bf5d76bab6e81b37ffdaf  szl_evidence_litellm-0.1.0-py3-none-any.whl
+a41b5f03de5cf96fb5e28e68fdbe2fe45057823eed8cb71b769740b09e057bba  szl_evidence_litellm-0.1.0.tar.gz
+9cdcb03471c727ebf5a9451566e3f22ccdb2d8f41afc14b322f729df362b5370  szl_receipts-14.0.0-py3-none-any.whl
+5a1ff1aa520381dd669f6e94e276eafb377f4e43f3f8089e32eb3c51c51219c6  szl_receipts-14.0.0.tar.gz

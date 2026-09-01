@@ -1,0 +1,41 @@
+{
+  "schema": "szl.release-manifest/v1",
+  "signed": false,
+  "honesty": "UNSIGNED \u2014 content-addressed manifest; production signing lane not enabled for this repo as of 2026-08-31. Verify by rebuilding from the pinned source revision in PROVENANCE.md and comparing digests.",
+  "release": "v0.1.0",
+  "created_utc": "2026-08-31T23:05:41Z",
+  "source": {
+    "repository": "szl-holdings/szl-platform",
+    "revision": "16ebbc0cdaf348b95e6ac300cca58b1f0193f0b2",
+    "paths": [
+      "packages/szl-receipts",
+      "packages/szl-evidence-litellm"
+    ]
+  },
+  "test_evidence": {
+    "szl-receipts": "163 passed (py3.14 sandbox)",
+    "szl-evidence-litellm": "see CI matrix (py3.11/3.12)"
+  },
+  "files": {
+    "szl_evidence_litellm-0.1.0-py3-none-any.whl": {
+      "sha256": "5446f45fd14c44d663d6755febd0747283da879d2c2bf5d76bab6e81b37ffdaf",
+      "bytes": 33996
+    },
+    "szl_evidence_litellm-0.1.0.tar.gz": {
+      "sha256": "a41b5f03de5cf96fb5e28e68fdbe2fe45057823eed8cb71b769740b09e057bba",
+      "bytes": 43372
+    },
+    "szl_receipts-14.0.0-py3-none-any.whl": {
+      "sha256": "9cdcb03471c727ebf5a9451566e3f22ccdb2d8f41afc14b322f729df362b5370",
+      "bytes": 33435
+    },
+    "szl_receipts-14.0.0.tar.gz": {
+      "sha256": "5a1ff1aa520381dd669f6e94e276eafb377f4e43f3f8089e32eb3c51c51219c6",
+      "bytes": 42815
+    }
+  },
+  "distribution": {
+    "lane": "in-repo content-addressed artifacts under releases/v0.1.0/",
+    "verify": "sha256sum -c releases/v0.1.0/SHA256SUMS.txt"
+  }
+}
