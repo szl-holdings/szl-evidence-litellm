@@ -15,6 +15,7 @@ from szl_evidence_litellm import (
     verify_sink,
 )
 from szl_evidence_litellm.sink import CHAIN_HEAD_FILE, CHAIN_LOG_FILE, DROPS_LOG_FILE
+from szl_receipts import append, entry_digest_for
 
 
 def _run(coro):
@@ -160,6 +161,30 @@ class TestThreadLane:
 
 
 class TestBootGateAndReads:
+    @pytest.mark.parametrize("defect,reason", [
+        ("stale-receipt-id", "receipt_id mismatch"),
+        ("null-receipt", "receipt must be an object"),
+        ("genesis-sequence", "genesis entry must have seq=1"),
+    ])
+    def test_well_hashed_invalid_chain_refuses_to_boot(self, sink_dir, policy, defect, reason):
+        chain = []
+        entry = append(chain, make_pending(policy).receipt)
+        if defect == "stale-receipt-id":
+            entry["receipt"]["actor"] = "changed-actor"
+        elif defect == "null-receipt":
+            entry["receipt"] = None
+        else:
+            entry["seq"] = 7
+        entry["entry_digest"] = entry_digest_for(entry["seq"], entry["receipt"], None)
+        sink_dir.mkdir()
+        log_path = sink_dir / CHAIN_LOG_FILE
+        original_bytes = (json.dumps(entry) + "\n").encode("utf-8")
+        log_path.write_bytes(original_bytes)
+
+        with pytest.raises(SinkBootError, match=reason):
+            EvidenceSink(sink_dir, policy=policy)
+        assert log_path.read_bytes() == original_bytes
+
     def test_reopening_a_healthy_sink_is_fine(self, sink, policy):
         async def scenario():
             await sink.start()
