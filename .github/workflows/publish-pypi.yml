@@ -36,19 +36,34 @@ jobs:
           python -m pip install --disable-pip-version-check build
           python -m build --outdir dist-receipts/ packages/szl-receipts
           python -m build --outdir dist-litellm/ packages/szl-evidence-litellm
-          (cd dist-receipts && sha256sum * | tee SHA256SUMS.txt)
-          (cd dist-litellm && sha256sum * | tee SHA256SUMS.txt)
-      - name: Upload szl-receipts dists
+          # Checksums go in a SEPARATE artifact, never in the published dist dir
+          # (gh-action-pypi-publish rejects non-distribution files like
+          #  SHA256SUMS.txt with "Unknown distribution format").
+          mkdir -p checksums
+          (cd dist-receipts && sha256sum *) > checksums/szl-receipts.SHA256SUMS.txt
+          (cd dist-litellm && sha256sum *) > checksums/szl-evidence-litellm.SHA256SUMS.txt
+          cat checksums/*.SHA256SUMS.txt
+      - name: Upload szl-receipts dists (publishable)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pypi-dists-receipts
-          path: dist-receipts/
+          path: |
+            dist-receipts/*.whl
+            dist-receipts/*.tar.gz
           if-no-files-found: error
-      - name: Upload szl-evidence-litellm dists
+      - name: Upload szl-evidence-litellm dists (publishable)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pypi-dists-litellm
-          path: dist-litellm/
+          path: |
+            dist-litellm/*.whl
+            dist-litellm/*.tar.gz
+          if-no-files-found: error
+      - name: Upload checksums (provenance only, not published)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pypi-checksums
+          path: checksums/
           if-no-files-found: error
 
   publish-receipts:
