@@ -11,6 +11,8 @@ import json
 import subprocess
 import sys
 
+import pytest
+
 from szl_receipts.jcs import jcs_canon_json_text
 from szl_receipts.receipt import verify_receipt
 
@@ -198,6 +200,30 @@ class TestChainVerify:
         _, chain_dir = self._write_chain(tmp_path, make_receipt, break_it="tamper")
         result = run_cli("chain-verify", str(chain_dir))
         assert result.returncode == 2
+
+    @pytest.mark.parametrize("defect,code", [
+        ("stale-receipt-id", "invalid-receipt"),
+        ("null-receipt", "malformed-entry"),
+        ("genesis-sequence", "genesis-seq-not-one"),
+    ])
+    def test_well_hashed_invalid_chain_exits_2(self, tmp_path, make_receipt, defect, code):
+        from szl_receipts.chain import entry_digest_for
+
+        chain, chain_dir = self._write_chain(tmp_path, make_receipt, n=1)
+        entry = chain[0]
+        if defect == "stale-receipt-id":
+            entry["receipt"]["actor"] = "changed-actor"
+        elif defect == "null-receipt":
+            entry["receipt"] = None
+        else:
+            entry["seq"] = 7
+        entry["entry_digest"] = entry_digest_for(entry["seq"], entry["receipt"], None)
+        (chain_dir / "entry-001.json").write_text(json.dumps(entry))
+        result = run_cli("chain-verify", str(chain_dir), "--json")
+        assert result.returncode == 2, result.stdout + result.stderr
+        report = json.loads(result.stdout)
+        assert report["ok"] is False
+        assert {f["code"] for f in report["findings"]} == {code}
 
     def test_truncated_chain_with_anchor_exits_2(self, tmp_path, make_receipt):
         chain, chain_dir = self._write_chain(tmp_path, make_receipt)

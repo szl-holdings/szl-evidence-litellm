@@ -4,11 +4,11 @@ Each entry binds a receipt to its position and its predecessor:
 
     entry_digest = sha256(JCS({"seq": n, "receipt": {...}, "prev": <hex|null>}))
 
-The genesis entry has ``prev = null``; every later entry's ``prev`` is the
-``entry_digest`` of the entry before it. Because ``receipt`` itself embeds a
-content-addressed ``receipt_id``, one digest recomputation authenticates the
-entire history: the chain is only as mutable as sha256's collision
-resistance.
+The genesis entry has ``seq = 1`` and ``prev = null``; every later entry's
+``prev`` is the ``entry_digest`` of the entry before it. Each receipt's
+content-addressed ``receipt_id`` is verified independently of its outer
+entry digest. These unkeyed digests establish structure and self-consistency,
+not authorship or the truth of a receipt's claims.
 
 Why an explicit verifier with a *findings list*: the attacks on a log are
 known — truncate the tail, reorder entries, replay an entry, fork a sequence
@@ -17,9 +17,10 @@ detection so an auditor reads *which* attack pattern fired instead of a bare
 "invalid". :func:`verify_chain` never throws on bad chain data; it reports.
 
 A note on scope: ``verify_chain`` verifies a *complete chain from genesis*.
-A silent truncation of the newest entries is only detectable against an
-external anchor, so the verifier accepts optional ``expected_entries`` /
-``expected_head`` anchors (the estate publishes its head digest out-of-band).
+A silent truncation or a self-consistent rewrite is only detectable against
+an authoritative external anchor, so the verifier accepts optional
+``expected_entries`` / ``expected_head`` anchors (the estate publishes its
+head digest out-of-band).
 """
 
 from __future__ import annotations
@@ -87,8 +88,9 @@ class ChainReport:
     finding carries a stable ``code`` so tooling (and tests) can match on
     attack classes without parsing prose:
 
-      malformed-entry · digest-mismatch · reorder · gap · replay · fork ·
-      broken-prev-link · genesis-prev-not-null · truncated · head-mismatch
+      malformed-entry · invalid-receipt · digest-mismatch · reorder · gap ·
+      replay · fork · broken-prev-link · genesis-prev-not-null ·
+      genesis-seq-not-one · truncated · head-mismatch
     """
 
     ok: bool
@@ -124,6 +126,9 @@ def verify_chain(
 
     Detections, each emitted as its own finding:
 
+    * **malformed-entry** - entry or receipt has the wrong structure.
+    * **invalid-receipt** - GovernedAction receipt validation fails, including
+      its content-addressed receipt_id.
     * **digest-mismatch** — entry content doesn't hash to its entry_digest
       (field-level tamper inside an entry).
     * **reorder** — seq numbers not strictly increasing along the list.
@@ -131,7 +136,8 @@ def verify_chain(
     * **replay** — the same seq reappears with the identical digest.
     * **fork** — the same seq reappears with a different digest.
     * **broken-prev-link** — entry.prev != digest of the preceding entry.
-    * **genesis-prev-not-null** — the first entry must anchor at null.
+    * **genesis-prev-not-null** - the first entry must anchor at null.
+    * **genesis-seq-not-one** - a complete chain must start at sequence 1.
     * **truncated** — fewer entries than the ``expected_entries`` anchor.
     * **head-mismatch** — final digest differs from the ``expected_head``
       anchor (silent tail truncation / rollback).
@@ -140,6 +146,9 @@ def verify_chain(
     anchor, dropping the newest entries yields a shorter but perfectly valid
     chain. The estate therefore anchors its head out-of-band; pass
     ``expected_entries``/``expected_head`` whenever an anchor exists.
+    Likewise, self-consistent rewrites require an authoritative external
+    head anchor to detect; this verifier does not establish authorship or
+    the truth of receipt claims. An empty unanchored chain is vacuously valid.
     """
     if not isinstance(entries, list):
         return ChainReport(
@@ -184,6 +193,23 @@ def verify_chain(
             )
             prev_entry = None
             continue
+
+        # The outer digest can bind any JSON value; it cannot substitute for
+        # the GovernedAction schema and content-addressed receipt identity.
+        if not isinstance(receipt, dict):
+            findings.append(
+                _finding(
+                    "malformed-entry",
+                    f"seq {seq}: receipt must be an object, got {type(receipt).__name__}",
+                    seq,
+                    index,
+                )
+            )
+        else:
+            for receipt_finding in verify_receipt(receipt):
+                findings.append(
+                    _finding("invalid-receipt", f"seq {seq}: {receipt_finding}", seq, index)
+                )
 
         # 1. Self-consistency: does the entry hash to its declared digest?
         try:
@@ -241,6 +267,15 @@ def verify_chain(
 
         # 4. Linkage to the predecessor.
         if index == 0:
+            if seq != 1:
+                findings.append(
+                    _finding(
+                        "genesis-seq-not-one",
+                        f"genesis entry must have seq=1, got {seq}",
+                        seq,
+                        index,
+                    )
+                )
             if prev is not None:
                 findings.append(
                     _finding(
