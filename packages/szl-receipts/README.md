@@ -1,6 +1,6 @@
 # szl-receipts
 
-[![PyPI](https://img.shields.io/pypi/v/szl-receipts)](https://pypi.org/project/szl-receipts/) [![Python](https://img.shields.io/pypi/pyversions/szl-receipts)](https://pypi.org/project/szl-receipts/)
+[![PyPI](https://img.shields.io/pypi/v/szl-receipts)](https://pypi.org/project/szl-receipts/) [![Python](https://img.shields.io/pypi/pyversions/szl-receipts)](https://pypi.org/project/szl-receipts/) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/szl-holdings/szl-evidence-litellm/badge)](https://scorecard.dev/viewer/?uri=github.com/szl-holdings/szl-evidence-litellm)
 
 The cryptographic receipt core for the SZL Holdings estate. Everything the
 estate does — a build, a deploy, a policy decision, an audit — can be reduced
