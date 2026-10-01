@@ -1,5 +1,7 @@
 # szl-evidence-litellm
 
+[![PyPI](https://img.shields.io/pypi/v/szl-evidence-litellm)](https://pypi.org/project/szl-evidence-litellm/) [![Python](https://img.shields.io/pypi/pyversions/szl-evidence-litellm)](https://pypi.org/project/szl-evidence-litellm/)
+
 **The SZL Evidence Plane plugin for LiteLLM: a tamper-evident, hash-chained,
 DSSE-ready receipt for every LLM request** — plugged into LiteLLM's callback
 system, invisible to callers until the day you need to *prove* what happened.

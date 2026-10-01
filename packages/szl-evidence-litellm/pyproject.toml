@@ -15,10 +15,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "szl-evidence-litellm"
-version = "0.1.0"
+version = "0.1.1"
 description = "SZL Evidence Plane plugin for LiteLLM: hash-chained, DSSE-signed receipts for every LLM request via LiteLLM's callback system."
 readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 license = { text = "Proprietary" }
 authors = [{ name = "SZL Holdings" }]
 keywords = ["litellm", "receipts", "dsse", "audit", "evidence", "otel", "genai"]
