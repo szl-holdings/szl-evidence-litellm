@@ -48,7 +48,7 @@ from .sink import (
     verify_sink,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.2"
 
 __all__ = [
     "ACTION_LLM_COMPLETION",

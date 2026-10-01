@@ -68,6 +68,6 @@ reference.
 
 ## License
 
-Proprietary — see each package's `pyproject.toml`. Contact SZL Holdings for
-licensing. The format specification is published separately as an IETF
-individual draft (`draft-lutar-governed-action-receipt`).
+Apache-2.0 (see [LICENSE](LICENSE)); both published packages carry the same
+license in their wheel metadata. The format specification is published
+separately as an IETF individual draft (`draft-lutar-governed-action-receipt`).
