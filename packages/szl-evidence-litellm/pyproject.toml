@@ -35,6 +35,12 @@ dev = ["pytest"]
 [project.scripts]
 szl-evidence-litellm = "szl_evidence_litellm.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/szl-holdings/szl-evidence-litellm"
+Source = "https://github.com/szl-holdings/szl-evidence-litellm"
+Issues = "https://github.com/szl-holdings/szl-evidence-litellm/issues"
+Changelog = "https://github.com/szl-holdings/szl-evidence-litellm/releases"
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 
@@ -45,6 +51,7 @@ where = ["src"]
 # this ini wins over the workspace root. We keep the root's doctrine (depreca-
 # tions are errors) but carve out litellm's own third-party DeprecationWarnings,
 # which are not ours to fix and would otherwise fail the integration module.
+
 [tool.pytest.ini_options]
 addopts = "-q"
 filterwarnings = [
@@ -56,3 +63,6 @@ filterwarnings = [
     "ignore::DeprecationWarning:jsonschema.*",
     "ignore::DeprecationWarning:aiohttp.*",
 ]
+
+[tool.szl.release]
+import_names = ["szl_evidence_litellm"] # wheel top-level import names; the release gate fails if the built wheel differs
