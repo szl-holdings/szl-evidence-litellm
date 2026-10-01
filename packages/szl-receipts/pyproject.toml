@@ -12,10 +12,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "szl-receipts"
-version = "14.0.0"
+version = "14.0.1"
 description = "Cryptographic receipt core for the SZL Holdings estate: RFC 8785 JCS, DSSE/Ed25519, in-toto statements, hash-chained GovernedAction receipts."
 readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 license = { text = "Proprietary" }
 authors = [{ name = "SZL Holdings" }]
 keywords = ["receipts", "dsse", "in-toto", "rfc8785", "ed25519", "audit"]
