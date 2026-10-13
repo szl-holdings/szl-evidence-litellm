@@ -54,17 +54,29 @@ Or pin a release asset directly (each GitHub Release carries built
 
 ```python
 import litellm
-from szl_evidence_litellm import EvidencePolicy, EvidenceSink, FailMode
+from szl_evidence_litellm import EvidencePolicy, EvidenceSink, FailMode, SZLEvidenceLogger
 
 policy = EvidencePolicy(fail_mode=FailMode.FAIL_OPEN)   # or FAIL_CLOSED
-sink = EvidenceSink(policy, path="receipts.jsonl")
-litellm.callbacks = [sink.plugin]
+sink = EvidenceSink("./evidence", policy=policy)        # a directory; the chain is ./evidence/receipts.jsonl
+logger = SZLEvidenceLogger(sink=sink, policy=policy)    # the LiteLLM callback
+litellm.callbacks = [logger]
 ```
 
-Every call now leaves a content-addressed receipt; the chain verifies offline:
+`EvidenceSink` takes the sink directory as its first argument and the policy
+as a keyword. The sink only persists; `SZLEvidenceLogger` is the object you
+register with LiteLLM. Synchronous calls (`litellm.completion`) persist
+through a background worker thread. Under asyncio (`litellm.acompletion`),
+call `await sink.start()` inside the running loop and
+`await logger.aclose()` on shutdown to drain the queue. For the LiteLLM proxy,
+register `szl_evidence_litellm.plugin.evidence_logger` in the proxy YAML
+instead; `packages/szl-evidence-litellm/README.md` shows how.
+
+Each call now leaves a content-addressed receipt. Under `FAIL_OPEN`, a
+receipt dropped by backpressure is counted in `stats`, never silently. The
+chain verifies offline:
 
 ```bash
-python -m szl_receipts verify receipts.jsonl
+python -m szl_evidence_litellm verify --sink ./evidence
 ```
 
 See `packages/szl-evidence-litellm/README.md` for the five load-bearing
