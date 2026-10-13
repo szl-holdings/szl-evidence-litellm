@@ -299,20 +299,73 @@ class EvidenceSink:
             if time.monotonic() > deadline:
                 raise TimeoutError(f"sink drain exceeded {timeout_s}s")
             await asyncio.to_thread(self._persist_until_empty)
-        if self._tqueue is not None:
-            while True:
-                try:
-                    batch = [self._tqueue.get_nowait()]
-                except thread_queue.Empty:
-                    break
-                while len(batch) < self.batch_size and not self._tqueue.empty():
-                    try:
-                        batch.append(self._tqueue.get_nowait())
-                    except thread_queue.Empty:
-                        break
-                await asyncio.to_thread(self._persist_batch, batch)
+        await asyncio.to_thread(self._drain_thread_queue)
+
+    def drain_thread_lane(self, timeout_s: float | None = None) -> int:
+        """Stop the thread-lane worker and synchronously persist its backlog.
+
+        For shutdown paths without a running event loop. The worker exits on
+        its stop flag without draining the thread-lane queue, so this persists
+        whatever is still queued through :meth:`_persist_batch` in
+        ``batch_size`` batches. It keeps draining while a racing producer adds
+        receipts, and re-stops a worker that such a producer restarted
+        (``_enqueue_thread`` restarts a dead worker and clears the flag).
+
+        Returns how many receipts this call persisted; the worker's own final
+        batch is not counted. Raises :class:`TimeoutError` if receipts are
+        still queued, or a worker is still running, at the deadline: queued
+        receipts are never abandoned silently. ``timeout_s`` defaults to
+        ``max(5.0, 2 * flush_interval_s)`` so an idle worker always has time to
+        notice the flag. Receipts enqueued after this returns are outside its
+        guarantee; such an enqueue restarts the worker as usual.
+        """
+        if timeout_s is None:
+            timeout_s = max(5.0, 2 * self.flush_interval_s)
+        if timeout_s <= 0:
+            raise ValueError("timeout_s must be > 0")
+        deadline = time.monotonic() + timeout_s
+        persisted = 0
+        while True:
+            self._worker_stop.set()
+            worker = self._worker
+            if worker is not None and worker.is_alive():
+                worker.join(timeout=max(0.0, deadline - time.monotonic()))
+            persisted += self._drain_thread_queue(deadline)
+            worker = self._worker
+            running = worker is not None and worker.is_alive()
+            queued = self._tqueue.qsize() if self._tqueue is not None else 0
+            if not running and not queued:
+                return persisted
+            if time.monotonic() >= deadline:
+                still = " and the worker is still running" if running else ""
+                raise TimeoutError(
+                    f"thread-lane drain exceeded {timeout_s}s: {queued} receipt(s) still "
+                    f"queued{still}; this call persisted {persisted}"
+                )
 
     # -------------------------------------------------------------- internals
+
+    def _drain_thread_queue(self, deadline: float | None = None) -> int:
+        """Persist what is on the thread-lane queue, in ``batch_size`` batches.
+
+        Shared by :meth:`aclose` and :meth:`drain_thread_lane`. Stops taking
+        new batches once *deadline* (a ``time.monotonic()`` value) passes and
+        leaves the rest queued for the caller to report. A batch taken off the
+        queue is always handed to :meth:`_persist_batch`. Returns the count.
+        """
+        tqueue = self._tqueue
+        persisted = 0
+        while tqueue is not None and (deadline is None or time.monotonic() < deadline):
+            batch: list[PendingReceipt] = []
+            while len(batch) < self.batch_size:
+                try:
+                    batch.append(tqueue.get_nowait())
+                except thread_queue.Empty:
+                    break
+            if not batch:
+                break
+            persisted += self._persist_batch(batch)
+        return persisted
 
     async def _flush_loop(self) -> None:
         """Batch receipts (size `batch_size` or age `flush_interval_s`) and persist.

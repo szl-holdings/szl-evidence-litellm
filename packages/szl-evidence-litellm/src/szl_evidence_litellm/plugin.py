@@ -36,7 +36,6 @@ the package imports and unit-tests anywhere.
 from __future__ import annotations
 
 import os
-import time
 import warnings
 from collections import OrderedDict
 from datetime import datetime
@@ -591,20 +590,22 @@ class SZLEvidenceLogger(_LiteLLMCustomLogger):
         """Drain the sink on shutdown (call from a FastAPI lifespan hook)."""
         await self.sink.aclose()
 
-    def flush_sync(self) -> None:
-        """Synchronous drain for shutdown paths without a running loop."""
-        self.sink._worker_stop.set()  # noqa: SLF001 — shutdown path, same package
-        worker = self.sink._worker  # noqa: SLF001
-        if worker is not None and worker.is_alive():
-            worker.join(timeout=max(self.sink.flush_interval_s * 2, 1.0))
-        tqueue = self.sink._tqueue  # noqa: SLF001
-        deadline = time.monotonic() + 5.0
-        while tqueue is not None and not tqueue.empty() and time.monotonic() < deadline:
-            time.sleep(min(self.sink.flush_interval_s, 0.05))
+    def flush_sync(self, timeout_s: float | None = None) -> int:
+        """Synchronous drain for shutdown paths without a running loop.
+
+        Persists every receipt queued on the thread lane (see
+        :meth:`EvidenceSink.drain_thread_lane`) and returns how many this call
+        persisted. Raises :class:`TimeoutError` rather than returning while
+        thread-lane receipts are still queued, and :class:`RuntimeError` if
+        receipts remain on the asyncio lane, which only ``await aclose()`` can
+        drain.
+        """
+        flushed = self.sink.drain_thread_lane(timeout_s)
         if self.sink._queue is not None and not self.sink._queue.empty():  # noqa: SLF001
             raise RuntimeError(
                 "receipts remain on the asyncio lane; drain with `await logger.aclose()`"
             )
+        return flushed
 
 
 def _build_module_logger() -> SZLEvidenceLogger | None:
