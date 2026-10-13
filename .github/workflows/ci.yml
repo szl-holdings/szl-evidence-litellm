@@ -32,6 +32,8 @@ jobs:
         run: cd packages/szl-receipts && python -m pytest tests
       - name: Test plugin
         run: cd packages/szl-evidence-litellm && python -m pytest tests
+      - name: Test README examples against the real API
+        run: python -m pytest tests
 
   dist:
     name: build + hash distributions
