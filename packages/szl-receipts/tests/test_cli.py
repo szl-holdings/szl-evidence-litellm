@@ -12,7 +12,6 @@ import subprocess
 import sys
 
 import pytest
-
 from szl_receipts.jcs import jcs_canon_json_text
 from szl_receipts.receipt import verify_receipt
 

@@ -7,9 +7,9 @@ repository. Earlier revisions of this file called it private. That was wrong.
 | Field | Value |
 |---|---|
 | Source repository | `szl-holdings/szl-platform` (public) |
-| Source revision | `9df0ae1ea7a8fcc6d2ad1eb10cbfbbfcaffc14c0` (partial sync; see "Sync status") |
+| Source revision | `e9ab527c1984ee80ce719d6729537c440b9d1ece` (partial sync; see "Sync status") |
 | Source paths | `packages/szl-receipts/`, `packages/szl-evidence-litellm/` |
-| Exported | 2026-10-13 (partial sync). Last full export: 2026-08-31, from `4f2b5f28f8c35daa81522d1dbc605f373df5b07c` |
+| Exported | 2026-10-14 (partial sync). Last full export: 2026-08-31, from `4f2b5f28f8c35daa81522d1dbc605f373df5b07c` |
 | Export method | `tar` copy excluding `__pycache__/`, `*.egg-info/`, `.pytest_cache/` |
 | Mutation policy | Do not edit package code here; changes land in `szl-platform` first and are re-exported with a new revision pin |
 
@@ -22,6 +22,23 @@ this mirror and attaches them, with SHA256 sums, to each GitHub Release.
 
 The two package directories are **not** a byte-exact copy of any single
 `szl-platform` revision.
+
+### 2026-10-14 sync: chain verifier converged
+
+`szl-platform` #24 (merge commit `e9ab527c`) ported this mirror's stricter
+chain verifier (#3) into the monorepo. The verifier checks every inner
+receipt with `verify_receipt`, including its content-addressed `receipt_id`,
+and requires a complete chain to start at `seq = 1`. The verifier is no
+longer a mirror-only change. This sync took the two test files back from
+`szl-platform`. They add a substituted-`receipt_id` vector and a mid-chain
+bad-receipt vector with the outer chain fully relinked, plus two lint fixes.
+
+| File | State against `szl-platform@e9ab527c` |
+|---|---|
+| `packages/szl-receipts/src/szl_receipts/chain.py` | byte-exact (converged; no code change in this sync) |
+| `packages/szl-receipts/tests/test_chain.py` | byte-exact |
+| `packages/szl-receipts/tests/test_cli.py` | byte-exact |
+| `packages/szl-evidence-litellm/tests/test_sink.py` | boot-gate cases identical; still lacks the platform-only flusher test listed below |
 
 ### 2026-10-13 sync (second): crash-atomic ledger
 
@@ -58,14 +75,9 @@ that have not been reviewed for this distribution.
   - `packages/*/pyproject.toml`: Apache-2.0 metadata, versions 14.0.2 and 0.1.2, `[project.urls]`, `[tool.szl.release]`
   - `packages/*/README.md` badges
   - `__version__` in both `__init__.py` files
-- **Stricter chain verifier (#3).** This verifier checks inner receipts and that the genesis sequence starts at 1. Porting it to `szl-platform` is pending approval. Files:
-  - `packages/szl-receipts/src/szl_receipts/chain.py`
-  - `packages/szl-receipts/tests/test_chain.py`
-  - `packages/szl-receipts/tests/test_cli.py`
-  - `packages/szl-evidence-litellm/tests/test_sink.py` (its boot-gate cases)
 
 ### `szl-platform`-only changes (not yet exported here)
 
 - `src/szl_evidence_litellm/modes.py` and `tests/test_modes.py`: strict parsing of `SZL_REQUIRE_RECEIPT` (`53c3f3d`).
-- `src/szl_evidence_litellm/sink.py` and `tests/test_sink.py`: an enqueue on a running loop now starts the asyncio flusher without needing `start()` (`e5bc48d`).
+- `src/szl_evidence_litellm/sink.py` and `tests/test_sink.py`: an enqueue on a running loop now starts the asyncio flusher without needing `start()` (`e5bc48d`). The test is `test_async_enqueue_boots_flusher_without_explicit_start`.
 - Both `pyproject.toml` files: `classifiers = ["Private :: Do Not Upload"]` (`92a5c20`). This must not be exported here, because this repository publishes to PyPI.
