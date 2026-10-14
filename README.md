@@ -28,16 +28,30 @@ the SZL Holdings monorepo (`szl-platform`):
 
 | Package | Version | Role |
 |---|---|---|
-| `szl-receipts` | 14.0.0 | Trust core: RFC 8785 JCS, chunked byte digests, DSSE/in-toto envelopes, Ed25519, hash-chained append-only ledger |
-| `szl-evidence-litellm` | 0.1.0 | The LiteLLM callback plugin: synchronous receipt construction, asynchronous bounded-queue persistence, explicit fail-open/fail-closed policy, per-attempt deployment capture, OpenTelemetry mapping |
+| `szl-receipts` | 14.0.2 | Trust core: RFC 8785 JCS, chunked byte digests, DSSE/in-toto envelopes, Ed25519, hash-chained append-only ledger |
+| `szl-evidence-litellm` | 0.1.2 | The LiteLLM callback plugin: synchronous receipt construction, asynchronous bounded-queue persistence, explicit fail-open/fail-closed policy, per-attempt deployment capture, OpenTelemetry mapping |
 
-Provenance: byte-exact mirror of `szl-platform@4f2b5f28f8c35daa81522d1dbc605f373df5b07c`
-(2026-08-31). See [PROVENANCE.md](PROVENANCE.md). Development happens in the
-monorepo; this repo is the release surface.
+Provenance: the last full export was from
+`szl-platform@4f2b5f28f8c35daa81522d1dbc605f373df5b07c` (2026-08-31). Later
+changes arrived as partial syncs, most recently against `szl-platform@e9ab527c`
+(2026-10-14), so the package directories are not a byte-exact copy of any one
+`szl-platform` revision. [PROVENANCE.md](PROVENANCE.md) lists each difference.
+Development happens in the monorepo; this repo is the release surface.
 
 ## Install
 
-Until the packages land on PyPI, install from this repository:
+Both packages are on PyPI: `szl-receipts` 14.0.2 and `szl-evidence-litellm`
+0.1.2, published on 2026-10-01 from the release tags at `cc4ea06`. The plugin
+depends on `szl-receipts>=14.0`, so one command installs both:
+
+```bash
+pip install 'szl-evidence-litellm[litellm,proxy]'
+```
+
+`main` has two plugin fixes from `szl-platform` that are not in 0.1.2 yet:
+`flush_sync()` now drains the thread lane or raises (#16), and the ledger file
+is replaced crash-atomically (#17). To run `main`, install from this
+repository, trust core first:
 
 ```bash
 git clone https://github.com/szl-holdings/szl-evidence-litellm.git
@@ -46,9 +60,12 @@ pip install -e packages/szl-receipts          # the trust core FIRST (peer depen
 pip install -e 'packages/szl-evidence-litellm[litellm,proxy]'
 ```
 
-Or pin a release asset directly (each GitHub Release carries built
-`sdist`/`wheel` files with SHA256SUMS and an unsigned receipt manifest, named
-`*.unsigned.json` until the estate's production signing lane is enabled).
+No GitHub Release has attached files; the distributions are on PyPI. The
+original 2026-08-31 build of `v0.1.0` (sdists, wheels, `SHA256SUMS.txt` and an
+unsigned manifest, `release-manifest.unsigned.json`) is committed under
+`releases/v0.1.0/`. It is not byte-identical to the 0.1.0 and 14.0.0 files
+uploaded to PyPI on 2026-09-30, which were rebuilt and have different SHA-256
+digests.
 
 ## Quick start
 
@@ -85,8 +102,10 @@ reference.
 
 ## Verify the estate's claims about this package
 
-- 163 trust-core tests and the full plugin suite run in CI on every push
-  (Python 3.11 and 3.12), offline and hermetic.
+- CI runs the trust-core tests, the full plugin suite and the README
+  examples on every push to `main` and every pull request (Python 3.11 and
+  3.12), offline and hermetic. The `main` run at `9e6c97b` passed 197
+  trust-core tests and 80 plugin tests (1 skipped) on both versions.
 - The companion attack harness (19 attacks against this receipt chain — all
   blocked) lives in the SZL estate; this distribution's chain semantics are
   the exact code those attacks run against.
@@ -94,5 +113,10 @@ reference.
 ## License
 
 Apache-2.0 (see [LICENSE](LICENSE)); both published packages carry the same
-license in their wheel metadata. The format specification is published
-separately as an IETF individual draft (`draft-lutar-governed-action-receipt`).
+license in their wheel metadata. The receipt format is specified separately in
+`draft-lutar-governed-action-receipt-00`, a document in individual
+Internet-Draft format kept in `szl-platform` under
+[`docs/standards/`](https://github.com/szl-holdings/szl-platform/tree/main/docs/standards).
+It has not been submitted to the IETF, and the IETF datatracker has no document
+under that name. A copy is deposited on Zenodo as a technical note,
+[doi:10.5281/zenodo.22217725](https://doi.org/10.5281/zenodo.22217725).
