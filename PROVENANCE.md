@@ -7,7 +7,7 @@ repository. Earlier revisions of this file called it private. That was wrong.
 | Field | Value |
 |---|---|
 | Source repository | `szl-holdings/szl-platform` (public) |
-| Source revision | `b8a0e6d287f1bbea314c698b0749a37d06573b31` (partial sync; see "Sync status") |
+| Source revision | `9df0ae1ea7a8fcc6d2ad1eb10cbfbbfcaffc14c0` (partial sync; see "Sync status") |
 | Source paths | `packages/szl-receipts/`, `packages/szl-evidence-litellm/` |
 | Exported | 2026-10-13 (partial sync). Last full export: 2026-08-31, from `4f2b5f28f8c35daa81522d1dbc605f373df5b07c` |
 | Export method | `tar` copy excluding `__pycache__/`, `*.egg-info/`, `.pytest_cache/` |
@@ -23,7 +23,18 @@ this mirror and attaches them, with SHA256 sums, to each GitHub Release.
 The two package directories are **not** a byte-exact copy of any single
 `szl-platform` revision.
 
-### 2026-10-13 sync
+### 2026-10-13 sync (second): crash-atomic ledger
+
+This sync took only the change from `szl-platform` #23 (merge commit
+`9df0ae1e`), which replaces `receipts.jsonl` via temp file + fsync +
+`os.replace` instead of truncating it in place:
+
+| File | State against `szl-platform@9df0ae1e` |
+|---|---|
+| `packages/szl-evidence-litellm/tests/test_ledger_atomic.py` | byte-exact (new file) |
+| `packages/szl-evidence-litellm/src/szl_evidence_litellm/sink.py` | #23 diff applied as a patch; still lacks the platform-only flusher hunk listed below |
+
+### 2026-10-13 sync (first): flush_sync drain
 
 This sync took only the change from `szl-platform` #22 (merge commit
 `b8a0e6d2`), which makes `flush_sync()` drain the thread lane or raise:
