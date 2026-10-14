@@ -9,8 +9,11 @@ Shape of the thing:
   up to ``flush_interval_s`` seconds or ``batch_size`` receipts, whichever
   comes first, then appends them to ``receipts.jsonl`` as hash-chained
   entries (:func:`szl_receipts.append` semantics: ``seq``, ``prev``,
-  ``entry_digest``) and fsyncs the batch. One writer means no interleaving,
-  no sequence races, no partial lines.
+  ``entry_digest``). Each batch rewrites the ledger crash-atomically: the
+  full new contents go to a temp file in the same directory, which is
+  fsynced and then renamed over ``receipts.jsonl``. One writer means no
+  interleaving and no sequence races; the atomic rename means a crash
+  mid-batch leaves the previous ledger, never a truncated or torn one.
 * On restart the sink re-reads ``receipts.jsonl`` and offers it to
   :func:`szl_receipts.verify_chain`. **A corrupt on-disk chain refuses to
   boot** — continuing to append onto a tampered tail would manufacture
@@ -28,7 +31,7 @@ never do.
 
 Files in the sink directory:
 
-* ``receipts.jsonl`` — one chain entry per line (the append-only ledger)
+* ``receipts.jsonl`` — one chain entry per line (append-only chain, replaced atomically)
 * ``evidence/<digest>.json`` — content-addressed evidence documents
 * ``bodies/<digest>.json`` — captured bodies, only when capture is enabled
 * ``chain_head.json`` — checkpoint {seq, entry_digest, entries} after each batch
@@ -38,9 +41,13 @@ Files in the sink directory:
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import errno
 import json
 import os
 import queue as thread_queue
+import secrets
+import stat
 import threading
 import time
 from collections.abc import Iterator
@@ -73,6 +80,24 @@ DROPS_LOG_FILE = "drops.jsonl"
 #: ~20 MB of queued evidence — enough to absorb a flusher stall, small enough
 #: that a wedged sink cannot eat the process.
 DEFAULT_QUEUE_MAXSIZE = 10_000
+
+_POSIX = os.name == "posix"
+#: Directory fsync errors that mean "this filesystem cannot do that" rather
+#: than "the disk failed". Only these are tolerated after the rename.
+_DIR_FSYNC_UNSUPPORTED = frozenset(
+    code
+    for code in (
+        getattr(errno, "EINVAL", None),
+        getattr(errno, "ENOTSUP", None),
+        getattr(errno, "EOPNOTSUPP", None),
+    )
+    if code is not None
+)
+#: Windows refuses ``os.replace`` onto a file another handle has open (Python
+#: opens files without FILE_SHARE_DELETE), e.g. a concurrent ``stats()`` or
+#: ``verify_sink`` read. Those reads are short, so retry for about a second.
+_REPLACE_RETRIES = 50 if os.name == "nt" else 0
+_REPLACE_RETRY_DELAY_S = 0.02
 
 
 @dataclass(frozen=True)
@@ -402,11 +427,16 @@ class EvidenceSink:
             self._persist_batch(batch)
 
     def _persist_batch(self, batch: list[PendingReceipt]) -> int:
-        """Chain *batch* onto the tail in memory, then one write + fsync.
+        """Chain *batch* onto the tail in memory, then replace the ledger atomically.
 
         Returns the persisted count. The in-memory chain is read back fresh
-        from disk each batch — the ledger file is the single source of truth,
-        so a crash between batches loses nothing already fsynced. Serialized
+        from disk each batch — the ledger file is the single source of truth.
+        The full new ledger is written and fsynced to a temp file, then
+        renamed over ``receipts.jsonl`` (:meth:`_replace_ledger`), so a crash
+        at any point, including in the middle of this batch, leaves either
+        the previous ledger or the new one: receipts already fsynced are never
+        lost. If writing fails, the ledger is untouched, the temp file is
+        removed and the error propagates; the batch did not commit. Serialized
         across the asyncio and thread lanes by ``_persist_lock``.
         """
         with self._persist_lock:
@@ -417,12 +447,65 @@ class EvidenceSink:
             lines = "".join(
                 json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n" for entry in entries
             )
-            with open(self.log_path, "w", encoding="utf-8") as fh:
+            self._replace_ledger(lines)
+            self._write_checkpoint(entries)
+        return len(batch)
+
+    def _replace_ledger(self, lines: str) -> None:
+        """Crash-atomically make *lines* the whole content of ``receipts.jsonl``.
+
+        1. Write to a new, uniquely named temp file in the sink directory (same
+           filesystem, so the rename is atomic), in the same text mode the
+           ledger has always been written with, so the bytes are unchanged.
+        2. Flush and fsync it, so its bytes are durable before the ledger
+           name points at them. On POSIX it takes the old ledger's mode bits.
+        3. ``os.replace`` it over the ledger: readers see the old file or the
+           new one, never a mix.
+        4. On POSIX, fsync the directory so the rename itself is durable.
+           Windows cannot fsync a directory; that step is skipped there.
+
+        On an exception the temp file is removed and the ledger is never
+        opened, truncated or unlinked. A hard kill can leave a stale
+        ``.receipts.jsonl.*.tmp``; nothing reads it and the ledger is intact.
+        """
+        tmp = self.directory / f".{CHAIN_LOG_FILE}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+        fh = open(tmp, "x", encoding="utf-8")  # O_EXCL: never adopts an existing file
+        try:
+            with fh:
                 fh.write(lines)
                 fh.flush()
                 os.fsync(fh.fileno())
-            self._write_checkpoint(entries)
-        return len(batch)
+            if _POSIX and self.log_path.exists():
+                os.chmod(tmp, stat.S_IMODE(self.log_path.stat().st_mode))
+            self._rename_over_ledger(tmp)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            raise
+        if _POSIX:
+            self._fsync_directory()
+
+    def _rename_over_ledger(self, tmp: Path) -> None:
+        for attempt in range(_REPLACE_RETRIES + 1):
+            try:
+                os.replace(tmp, self.log_path)
+                return
+            except PermissionError:
+                if attempt >= _REPLACE_RETRIES:
+                    raise
+                time.sleep(_REPLACE_RETRY_DELAY_S)
+
+    def _fsync_directory(self) -> None:
+        """Make the rename durable. Tolerates only "unsupported" errors."""
+        try:
+            fd = os.open(self.directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except OSError as exc:
+            if exc.errno not in _DIR_FSYNC_UNSUPPORTED:
+                raise
 
     def _write_sidecar(self, pending: PendingReceipt) -> None:
         """Materialize the evidence document at its content-addressed path."""
