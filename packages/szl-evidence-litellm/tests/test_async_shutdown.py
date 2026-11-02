@@ -37,7 +37,7 @@ def test_aclose_waits_for_batch_already_dequeued(sink_dir, policy):
             assert not close.done(), "shutdown returned before its in-flight write"
         finally:
             release.set()
-            await close
+            await asyncio.wait_for(close, timeout=2)
         assert len(list(sink.iterate())) == 1
         assert verify_sink(sink.directory)["ok"]
 
