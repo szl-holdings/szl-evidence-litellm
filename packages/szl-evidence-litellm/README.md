@@ -38,8 +38,15 @@ serialized persistence path.
 At async shutdown, `await logger.aclose()` waits for a batch already removed
 from the queue to finish writing and surfaces a failed flusher. A sink-level
 `aclose(timeout_s=...)` timeout means shutdown is incomplete; its in-flight
-write remains awaitable by a later `aclose()` call. A timed-out worker is not
-reported as stopped. This does not make the in-process queue crash-durable.
+write remains awaitable by a later `aclose()` call, including from a new event
+loop. A timed-out worker is not reported as stopped. A terminal thread-worker
+failure is retained in `stats().worker_failed` and causes later enqueue and
+drain calls to raise. The failed batch is not automatically replayed: a ledger
+write may have committed before a checkpoint or fsync failed. Inspect the
+ledger and reconcile the uncertain outcome before creating a new sink. This
+does not make the in-process queue crash-durable.
+`flush_sync()` drains only the thread lane and refuses outstanding asyncio
+work, including a batch already removed from its queue; use `aclose()` for it.
 
 **2. Explicit fail-open vs fail-closed, per policy.** The one question an
 evidence layer must answer honestly: *what happens to the user's request
