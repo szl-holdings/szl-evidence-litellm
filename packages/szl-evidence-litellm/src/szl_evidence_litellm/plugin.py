@@ -601,7 +601,9 @@ class SZLEvidenceLogger(_LiteLLMCustomLogger):
         drain.
         """
         flushed = self.sink.drain_thread_lane(timeout_s)
-        if self.sink._queue is not None and not self.sink._queue.empty():  # noqa: SLF001
+        if self.sink._inflight is not None or (  # noqa: SLF001
+            self.sink._queue is not None and not self.sink._queue.empty()  # noqa: SLF001
+        ):
             raise RuntimeError(
                 "receipts remain on the asyncio lane; drain with `await logger.aclose()`"
             )

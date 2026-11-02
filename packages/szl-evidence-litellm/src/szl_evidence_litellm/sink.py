@@ -51,6 +51,7 @@ import stat
 import threading
 import time
 from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -159,6 +160,10 @@ class EvidenceSink:
         self._queue: asyncio.Queue[PendingReceipt] | None = None
         self._queue_loop: asyncio.AbstractEventLoop | None = None
         self._flusher: asyncio.Task[None] | None = None
+        # Completion belongs to the writer, not an event loop. A timed-out
+        # close can be retried even after its original loop has been closed.
+        self._inflight: Future[int] | None = None
+        self._writer_executor: ThreadPoolExecutor | None = None
         # No-running-loop path: LiteLLM's sync callbacks can fire on executor
         # threads. A stdlib queue + daemon worker thread keeps enqueue()
         # synchronous and exact there; both paths converge on _persist_batch
@@ -166,6 +171,7 @@ class EvidenceSink:
         # time regardless of which lane a receipt arrived on.
         self._tqueue: thread_queue.Queue[PendingReceipt] | None = None
         self._worker: threading.Thread | None = None
+        self._worker_failure: Exception | None = None
         self._worker_stop = threading.Event()
         self._persist_lock = threading.Lock()
 
@@ -188,6 +194,7 @@ class EvidenceSink:
         FAIL_OPEN   + full queue → drop, count it, and log it loudly once
         per drop-streak. Both outcomes are explicit; there is no third.
         """
+        self._check_worker_failure()
         try:
             asyncio.get_running_loop()
         except RuntimeError:
@@ -255,7 +262,21 @@ class EvidenceSink:
                     batch.append(self._tqueue.get_nowait())
                 except thread_queue.Empty:
                     break
-            self._persist_batch(batch)
+            try:
+                self._persist_batch(batch)
+            except Exception as exc:
+                # The ledger may already have committed before a later
+                # checkpoint/fsync failed. Retain the failure, never replay
+                # the batch automatically or claim a successful drain.
+                self._worker_failure = exc
+                self._worker_stop.set()
+                return
+
+    def _check_worker_failure(self) -> None:
+        if self._worker_failure is not None:
+            raise RuntimeError(
+                "evidence worker failed; commit outcome is unknown; inspect the ledger before recovery"
+            ) from self._worker_failure
 
     def _record_drop_streak(self) -> None:
         """Append one loud line for the start of a drop-streak. Best-effort IO."""
@@ -294,6 +315,15 @@ class EvidenceSink:
         """Boot the background flusher task (idempotent)."""
         if self.read_only:
             raise RuntimeError("read-only sinks inspect; they do not flush")
+        self._check_worker_failure()
+        flusher = self._flusher
+        if flusher is not None and not flusher.done():
+            if flusher.get_loop() is not asyncio.get_running_loop():
+                raise RuntimeError("sink flusher is active on another event loop")
+            return
+        if flusher is not None and not flusher.cancelled():
+            flusher.result()  # A failed flusher cannot silently restart.
+        await self._finish_inflight()
         self._require_queue()
         if self._flusher is None or self._flusher.done():
             self._flusher = asyncio.create_task(
@@ -301,30 +331,72 @@ class EvidenceSink:
             )
 
     async def aclose(self, timeout_s: float = 10.0) -> None:
-        """Stop both drain lanes and persist every queued receipt."""
-        flusher = self._flusher
-        if flusher is not None and not flusher.done():
-            flusher.cancel()
-            try:
-                async with asyncio.timeout(timeout_s):
-                    await flusher
-            except asyncio.CancelledError:
-                pass
-            except TimeoutError as exc:
-                raise TimeoutError(
-                    f"sink flusher shutdown exceeded {timeout_s}s"
-                ) from exc
+        """Drain both lanes, or report incomplete shutdown without losing the writer."""
+        if timeout_s <= 0:
+            raise ValueError("timeout_s must be > 0")
+        cancelling_at_entry = asyncio.current_task().cancelling()
         self._worker_stop.set()
-        worker = self._worker
-        if worker is not None and worker.is_alive():
-            await asyncio.to_thread(worker.join, timeout_s)
-        queue = self._queue
-        deadline = time.monotonic() + timeout_s
-        while queue is not None and not queue.empty():
-            if time.monotonic() > deadline:
-                raise TimeoutError(f"sink drain exceeded {timeout_s}s")
-            await asyncio.to_thread(self._persist_until_empty)
-        await asyncio.to_thread(self._drain_thread_queue)
+        try:
+            async with asyncio.timeout(timeout_s):
+                flusher = self._flusher
+                if flusher is not None:
+                    if not flusher.done():
+                        flusher.cancel()
+                    try:
+                        await flusher
+                    except asyncio.CancelledError:
+                        # Suppress our flusher's cancellation, not cancellation
+                        # of the close caller (including its timeout).
+                        if asyncio.current_task().cancelling() > cancelling_at_entry:
+                            raise
+                await self._finish_inflight()
+                worker = self._worker
+                if worker is not None and worker.is_alive():
+                    await asyncio.to_thread(worker.join, timeout_s)
+                    if worker.is_alive():
+                        raise TimeoutError("evidence worker is still running")
+                self._check_worker_failure()
+                for queue in (self._queue, self._tqueue):
+                    while queue is not None:
+                        batch = []
+                        while len(batch) < self.batch_size:
+                            try:
+                                batch.append(queue.get_nowait())
+                            except (asyncio.QueueEmpty, thread_queue.Empty):
+                                break
+                        if not batch:
+                            break
+                        await self._persist_async_batch(batch)
+        except TimeoutError as exc:
+            detail = (
+                "worker is still running"
+                if self._worker and self._worker.is_alive()
+                else "write or drain is incomplete"
+            )
+            raise TimeoutError(f"sink shutdown exceeded {timeout_s}s; {detail}") from exc
+        finally:
+            # shutdown(wait=False) never cancels submitted writes. Their Future
+            # remains usable from the next event loop after timeout/cancellation.
+            executor = self._writer_executor
+            if executor is not None:
+                executor.shutdown(wait=False)
+                self._writer_executor = None
+
+    async def _finish_inflight(self) -> None:
+        future = self._inflight
+        if future is not None:
+            await asyncio.shield(asyncio.wrap_future(future))
+            if self._inflight is future:
+                self._inflight = None
+
+    async def _persist_async_batch(self, batch: list[PendingReceipt]) -> None:
+        self._check_worker_failure()
+        if self._writer_executor is None:
+            self._writer_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="szl-evidence-writer"
+            )
+        self._inflight = self._writer_executor.submit(self._persist_batch, batch)
+        await self._finish_inflight()
 
     def drain_thread_lane(self, timeout_s: float | None = None) -> int:
         """Stop the thread-lane worker and synchronously persist its backlog.
@@ -348,6 +420,7 @@ class EvidenceSink:
             timeout_s = max(5.0, 2 * self.flush_interval_s)
         if timeout_s <= 0:
             raise ValueError("timeout_s must be > 0")
+        self._check_worker_failure()
         deadline = time.monotonic() + timeout_s
         persisted = 0
         while True:
@@ -355,6 +428,7 @@ class EvidenceSink:
             worker = self._worker
             if worker is not None and worker.is_alive():
                 worker.join(timeout=max(0.0, deadline - time.monotonic()))
+            self._check_worker_failure()
             persisted += self._drain_thread_queue(deadline)
             worker = self._worker
             running = worker is not None and worker.is_alive()
@@ -373,12 +447,13 @@ class EvidenceSink:
     def _drain_thread_queue(self, deadline: float | None = None) -> int:
         """Persist what is on the thread-lane queue, in ``batch_size`` batches.
 
-        Shared by :meth:`aclose` and :meth:`drain_thread_lane`. Stops taking
+        Used by :meth:`drain_thread_lane`. Stops taking
         new batches once *deadline* (a ``time.monotonic()`` value) passes and
         leaves the rest queued for the caller to report. A batch taken off the
         queue is always handed to :meth:`_persist_batch`. Returns the count.
         """
         tqueue = self._tqueue
+        self._check_worker_failure()
         persisted = 0
         while tqueue is not None and (deadline is None or time.monotonic() < deadline):
             batch: list[PendingReceipt] = []
@@ -395,9 +470,9 @@ class EvidenceSink:
     async def _flush_loop(self) -> None:
         """Batch receipts (size `batch_size` or age `flush_interval_s`) and persist.
 
-        The blocking file IO runs via ``asyncio.to_thread`` so the event loop
-        — which is usually the *user's LLM request loop* — never stalls on an
-        fsync for the audit trail.
+        The blocking file IO runs on a dedicated executor so the event loop
+        — usually the *user's LLM request loop* — never stalls on an fsync.
+        The completion future also survives a change of event loop.
         """
         while True:
             queue = self._require_queue()
@@ -412,19 +487,7 @@ class EvidenceSink:
             batch = [first]
             while len(batch) < self.batch_size and not queue.empty():
                 batch.append(queue.get_nowait())
-            await asyncio.to_thread(self._persist_batch, batch)
-
-    def _persist_until_empty(self) -> None:
-        queue = self._queue
-        if queue is None:
-            return
-        while True:
-            batch: list[PendingReceipt] = []
-            while len(batch) < self.batch_size and not queue.empty():
-                batch.append(queue.get_nowait())
-            if not batch:
-                return
-            self._persist_batch(batch)
+            await self._persist_async_batch(batch)
 
     def _persist_batch(self, batch: list[PendingReceipt]) -> int:
         """Chain *batch* onto the tail in memory, then replace the ledger atomically.
@@ -596,6 +659,10 @@ class EvidenceSink:
             "entries": len(entries),
             "queued": queued,
             "dropped_counter": self._dropped,
+            "worker_failed": self._worker_failure is not None,
+            "worker_failure_type": (
+                type(self._worker_failure).__name__ if self._worker_failure else None
+            ),
             "head": entries[-1]["entry_digest"] if entries else None,
             "checkpoint": checkpoint,
         }
