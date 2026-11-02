@@ -8,10 +8,13 @@ from datetime import datetime
 import pytest
 from szl_evidence_litellm import (
     EvidencePolicy,
+    EvidenceSink,
+    PendingReceipt,
     actor_from_api_key,
     build_attempt_receipt,
     canonical_request_doc,
     content_digest,
+    verify_sink,
 )
 from szl_evidence_litellm.payload import jsonable
 from szl_receipts import jcs_canon_bytes, sha256_hex, verify_receipt
@@ -75,6 +78,29 @@ class TestReceiptShape:
         assert built.receipt["policy"]["id"] == policy.name
         assert built.receipt["policy"]["version"] == policy.version
         assert built.receipt["policy"]["digest_sha256"] == policy.digest_sha256()
+
+    @pytest.mark.parametrize("latency_ms", [float("nan"), float("inf"), -float("inf")])
+    def test_nonfinite_latency_sidecar_matches_digest_and_persists(self, policy, tmp_path, latency_ms):
+        built = _build(policy, latency_ms=latency_ms)
+        sink = EvidenceSink(tmp_path, policy=policy)
+        pending = PendingReceipt(built.receipt, built.evidence_doc, built.evidence_uri)
+
+        assert sink._persist_batch([pending]) == 1
+        sidecar = tmp_path / built.evidence_uri
+        assert json.loads(sidecar.read_text())["latency_ms"] is None
+        assert built.evidence_doc["latency_ms"] is None
+        assert sha256_hex(sidecar.read_bytes()) == built.evidence_digest
+        assert verify_sink(tmp_path)["ok"] is True
+
+    def test_finite_latency_sidecar_preserves_rounded_measurement(self, policy, tmp_path):
+        built = _build(policy, latency_ms=12.3456)
+        sink = EvidenceSink(tmp_path, policy=policy)
+        pending = PendingReceipt(built.receipt, built.evidence_doc, built.evidence_uri)
+
+        assert sink._persist_batch([pending]) == 1
+        assert built.evidence_doc["latency_ms"] == 12.346
+        assert sha256_hex((tmp_path / built.evidence_uri).read_bytes()) == built.evidence_digest
+        assert verify_sink(tmp_path)["ok"] is True
 
 
 class TestDigestSensitivity:
