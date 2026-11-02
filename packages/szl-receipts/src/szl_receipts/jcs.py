@@ -16,8 +16,8 @@ Three classic pitfalls this module gets right (each covered by tests):
    as a surrogate *pair* whose first unit (0xD83D) sorts *below* U+FFFF
    (0xFFFF). Sorting by code point puts U+1F600 after U+FFFF; sorting by
    UTF-16 code units puts it before. We encode each key as big-endian UTF-16
-   (``surrogatepass`` keeps lone surrogates deterministic) and sort on those
-   bytes. This matches ECMAScript ``Array.prototype.sort`` on strings, which
+   and sort on those bytes. Invalid surrogate code points are rejected.
+   This matches ECMAScript ``Array.prototype.sort`` on strings, which
    is what the RFC is standardized against.
 
 2. **Numbers follow ECMAScript ``Number::toString``.** Python's ``repr`` of a
@@ -77,9 +77,9 @@ class JcsError(Exception):
 class IJsonError(JcsError):
     """Raised when a value is legitimate JSON but not interoperable (I-JSON).
 
-    RFC 8785 requires input to conform to I-JSON (RFC 7493): no NaN or
-    infinities, and integers must stay within the range every implementation
-    can represent exactly (|n| < 2**53). Rejecting here, at serialization
+    RFC 8785 requires input to conform to I-JSON (RFC 7493): no duplicate
+    object properties, invalid Unicode, NaN or infinities. Integers must stay
+    within the range every implementation can represent exactly (|n| < 2**53). Rejecting here, at serialization
     time, is what keeps a receipt digest meaningful across implementations.
     """
 
@@ -87,11 +87,13 @@ class IJsonError(JcsError):
 def sort_key_utf16(key: str) -> bytes:
     """Return the UTF-16BE code-unit byte sequence used for key ordering.
 
-    ``surrogatepass`` lets lone surrogates encode deterministically instead of
-    raising — the RFC's ordering rule is defined on UTF-16 code units, so even
-    degenerate input must order consistently rather than crash the serializer.
+    Reject surrogate code points in Python strings: they are not Unicode
+    scalar values and RFC 8785 requires an error for invalid Unicode input.
     """
-    return key.encode("utf-16-be", "surrogatepass")
+    try:
+        return key.encode("utf-16-be")
+    except UnicodeEncodeError as exc:
+        raise IJsonError("surrogate code points are not valid I-JSON strings") from exc
 
 
 _ESCAPES = {
@@ -109,15 +111,17 @@ def escape_string(value: str) -> str:
     """Escape *value* per RFC 8785 §3.2.2.2 (minimal escaping).
 
     Returns the escaped content *without* surrounding quotes. Only the
-    mandatory escapes are produced; all other characters — including DEL,
-    lone surrogates, and any astral character — are passed through untouched
-    and will be emitted as raw UTF-8 by the caller. No normalization is ever
+    mandatory escapes are produced; all other Unicode scalar values, including
+    DEL and astral characters, pass through untouched as raw UTF-8. Surrogate
+    code points are rejected with IJsonError. No normalization is ever
     applied: the exact code points on input are the exact code points on
     output.
     """
     out: list[str] = []
     for ch in value:
         cp = ord(ch)
+        if 0xD800 <= cp <= 0xDFFF:
+            raise IJsonError("surrogate code points are not valid I-JSON strings")
         seq = _ESCAPES.get(cp)
         if seq is not None:
             out.append(seq)
@@ -264,7 +268,7 @@ def _serialize_into(value: Any, out: bytearray) -> None:
         out += number_to_js_str(value).encode("ascii")
     elif isinstance(value, str):
         out += b'"'
-        out += escape_string(value).encode("utf-8", "surrogatepass")
+        out += escape_string(value).encode("utf-8")
         out += b'"'
     elif isinstance(value, (list, tuple)):
         out += b"["
@@ -287,7 +291,7 @@ def _serialize_into(value: Any, out: bytearray) -> None:
             if index:
                 out += b","
             out += b'"'
-            out += escape_string(key).encode("utf-8", "surrogatepass")
+            out += escape_string(key).encode("utf-8")
             out += b'":'
             _serialize_into(element, out)
         out += b"}"
@@ -300,6 +304,16 @@ def jcs_canon_bytes(obj: Any) -> bytes:
     return serialize(obj)
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate decoded property names before a dict can discard them."""
+    obj: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in obj:
+            raise IJsonError(f"duplicate JSON property name: {key!r}")
+        obj[key] = value
+    return obj
+
+
 def jcs_canon_json_text(text: str | bytes) -> str:
     """Parse JSON text, then return its canonical serialization as text.
 
@@ -307,6 +321,8 @@ def jcs_canon_json_text(text: str | bytes) -> str:
     whitespace or member order — ``{"a":1,"b":2}`` and
     ``' { "b" : 2 , "a" : 1 } '`` — parse to the same value and therefore
     canonicalize to identical bytes. Parsing first also means the
-    canonicalizer never trusts the producer's serializer choices.
+    canonicalizer never trusts the producer's serializer choices. Duplicate
+    decoded property names and invalid Unicode are rejected with IJsonError,
+    including inside nested objects and arrays (RFC 8785 §§3.1, 3.2.2.2).
     """
-    return serialize(json.loads(text)).decode("utf-8", "surrogatepass")
+    return serialize(json.loads(text, object_pairs_hook=_unique_object)).decode("utf-8")

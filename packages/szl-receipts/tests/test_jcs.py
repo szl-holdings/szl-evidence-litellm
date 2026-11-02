@@ -17,6 +17,7 @@ from szl_receipts.jcs import (
     jcs_canon_json_text,
     number_to_js_str,
     serialize,
+    sort_key_utf16,
 )
 
 
@@ -202,6 +203,42 @@ class TestEquivalence:
 
 
 class TestRejection:
+    @pytest.mark.parametrize("as_bytes", [False, True])
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '{"role":"user","role":"admin"}',
+            '{"x":1,"x":1}',
+            '{"nested":{"x":1,"x":2}}',
+            '[{"x":1,"x":2}]',
+            r'{"a":1,"\u0061":2}',
+            r'{"😀":1,"\ud83d\ude00":2}',
+        ],
+    )
+    def test_duplicate_properties_rejected_before_dict_conversion(self, text, as_bytes):
+        with pytest.raises(IJsonError, match="duplicate"):
+            jcs_canon_json_text(text.encode("utf-8") if as_bytes else text)
+
+    @pytest.mark.parametrize("value", ["\ud800", "\udfff", "before\udbad after"])
+    def test_surrogate_code_points_rejected_in_values_and_keys(self, value):
+        for obj in (value, [value], {"value": value}, {value: "value"}):
+            with pytest.raises(IJsonError, match="surrogate"):
+                serialize(obj)
+        for helper in (escape_string, sort_key_utf16):
+            with pytest.raises(IJsonError, match="surrogate"):
+                helper(value)
+
+    @pytest.mark.parametrize("text", [r'"\ud800"', r'{"\udead":1}', r'["\udfff"]'])
+    def test_escaped_lone_surrogates_rejected(self, text):
+        with pytest.raises(IJsonError, match="surrogate"):
+            jcs_canon_json_text(text)
+
+    def test_valid_surrogate_pair_in_json_decodes_to_unicode_scalar(self):
+        assert jcs_canon_json_text(r'{"\ud83d\ude00":"\ud83d\ude00"}') == '{"😀":"😀"}'
+
+    def test_repeated_property_names_in_distinct_objects_are_valid(self):
+        assert jcs_canon_json_text('[{"x":1},{"x":2}]') == '[{"x":1},{"x":2}]'
+
     def test_non_string_keys_rejected(self):
         with pytest.raises(TypeError):
             serialize({1: "one"})
