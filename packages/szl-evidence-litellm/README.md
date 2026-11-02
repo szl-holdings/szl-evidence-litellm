@@ -213,3 +213,10 @@ provider, call_id, attempt_index, tokens, latency_ms, finish_reason,
 cost_usd when LiteLLM reports it) lives in a content-addressed evidence
 document at `evidence/<digest>.json`, referenced from the receipt's
 `evidence[]` and re-hashed on every `verify`.
+
+Sidecar writes, lookups, and verification accept only the exact
+`evidence/<digest>.json` URI. Existing symlinks and special files are rejected
+before opening. Verification reports malformed or duplicate-key JSON as
+`evidence-invalid` and returns a failed result; it does not read relocated
+evidence outside that path. The sink directory must remain operator-controlled:
+these checks do not protect against concurrent hostile filesystem replacement.

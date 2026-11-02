@@ -46,6 +46,7 @@ import errno
 import json
 import os
 import queue as thread_queue
+import re
 import secrets
 import stat
 import threading
@@ -58,7 +59,7 @@ from pathlib import Path
 from typing import Any
 
 from szl_receipts import append as chain_append
-from szl_receipts import jcs_canon_bytes, sha256_hex, verify_chain
+from szl_receipts import JcsError, jcs_canon_bytes, sha256_hex, verify_chain
 
 from .modes import EvidencePolicy, FailMode
 
@@ -112,6 +113,37 @@ class PendingReceipt:
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _evidence_path(base: Path, uri: Any, digest: Any) -> Path:
+    """Admit only the sink's content-addressed, regular sidecar files.
+
+    The sink directory is trusted. This rejects existing symlinks and special
+    files; it does not make concurrent hostile filesystem replacement safe.
+    """
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        raise ValueError("invalid sidecar digest")
+    if uri != f"evidence/{digest}.json":
+        raise ValueError("sidecar URI is not its content-addressed path")
+    target = base / uri
+    if target.parent.is_symlink():
+        raise ValueError("sidecar directory must not be a symlink")
+    try:
+        mode = target.lstat().st_mode
+    except FileNotFoundError:
+        return target
+    if not stat.S_ISREG(mode):
+        raise ValueError("sidecar must be a regular file, not a symlink or special file")
+    return target
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate sidecar JSON key")
+        result[key] = value
+    return result
 
 
 class EvidenceBackpressure(Exception):
@@ -572,10 +604,11 @@ class EvidenceSink:
 
     def _write_sidecar(self, pending: PendingReceipt) -> None:
         """Materialize the evidence document at its content-addressed path."""
-        target = self.directory / pending.evidence_uri
+        blob = jcs_canon_bytes(pending.evidence_doc)
+        target = _evidence_path(self.directory, pending.evidence_uri, sha256_hex(blob))
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
-            target.write_bytes(jcs_canon_bytes(pending.evidence_doc))
+            target.write_bytes(blob)
 
     def _write_checkpoint(self, entries: list[dict[str, Any]]) -> None:
         if not entries:
@@ -628,14 +661,14 @@ class EvidenceSink:
             if receipt.get("receipt_id") == receipt_id:
                 evidence_doc = None
                 for ev in receipt.get("evidence", []):
-                    uri = ev.get("uri")
-                    if uri:
-                        sidecar = self.directory / uri
-                        if sidecar.exists():
-                            try:
-                                evidence_doc = json.loads(sidecar.read_text(encoding="utf-8"))
-                            except (OSError, json.JSONDecodeError):
-                                evidence_doc = None
+                    if not isinstance(ev, dict):
+                        continue
+                    try:
+                        sidecar = _evidence_path(self.directory, ev.get("uri"), ev.get("sha256"))
+                        evidence_doc = json.loads(sidecar.read_text(encoding="utf-8"),
+                                                 object_pairs_hook=_unique_json_object)
+                    except (OSError, ValueError, RecursionError):
+                        evidence_doc = None
                 return receipt, evidence_doc
         return None
 
@@ -678,31 +711,42 @@ def verify_sink(path: str | Path) -> dict[str, Any]:
     Beyond the chain itself, every receipt's evidence sidecar is re-hashed
     and compared with the digest the receipt committed to, and the file is
     checked at its content-addressed path (``evidence/<digest>.json``). A
-    missing or substituted sidecar flips ``ok`` to False.
+    missing, substituted, malformed, or mislocated sidecar flips ``ok`` to
+    False. Existing symlinks and special files are rejected before opening.
     """
     base = Path(path)
     log_path = base / CHAIN_LOG_FILE
     entries = EvidenceSink._read_jsonl(log_path)
     report = verify_chain(entries)
     out = report.to_dict()
-    sidecars = {"checked": 0, "missing": 0, "mismatched": 0}
+    sidecars = {"checked": 0, "missing": 0, "mismatched": 0, "invalid": 0}
     findings: list[dict[str, Any]] = out["findings"]
     for entry in entries:
         receipt = entry.get("receipt", {}) if isinstance(entry, dict) else {}
-        for ev in receipt.get("evidence", []) or []:
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("evidence", []), list):
+            continue  # The chain verifier already reports the invalid receipt shape.
+        for ev in receipt.get("evidence", []):
+            if not isinstance(ev, dict):
+                continue
             uri = ev.get("uri")
             want = ev.get("sha256")
-            if not isinstance(uri, str) or not isinstance(want, str):
-                continue
-            target = base / uri
             sidecars["checked"] += 1
-            if not target.exists():
+            try:
+                target = _evidence_path(base, uri, want)
+                doc = json.loads(target.read_text(encoding="utf-8"),
+                                 object_pairs_hook=_unique_json_object)
+                got = sha256_hex(jcs_canon_bytes(doc))
+            except FileNotFoundError:
                 sidecars["missing"] += 1
                 findings.append(
                     {"code": "evidence-missing", "message": f"sidecar not found: {uri}"}
                 )
                 continue
-            got = sha256_hex(jcs_canon_bytes(json.loads(target.read_text(encoding="utf-8"))))
+            except (OSError, ValueError, TypeError, RecursionError, JcsError) as exc:
+                sidecars["invalid"] += 1
+                findings.append({"code": "evidence-invalid",
+                                 "message": f"sidecar rejected: {type(exc).__name__}"})
+                continue
             if got != want:
                 sidecars["mismatched"] += 1
                 findings.append(
@@ -712,7 +756,7 @@ def verify_sink(path: str | Path) -> dict[str, Any]:
                     }
                 )
     out["sidecars"] = sidecars
-    out["ok"] = report.ok and not sidecars["missing"] and not sidecars["mismatched"]
+    out["ok"] = report.ok and not any(sidecars[key] for key in ("missing", "mismatched", "invalid"))
     out["sink"] = str(base)
     out["chain_log"] = str(log_path)
     return out
