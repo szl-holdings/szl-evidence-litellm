@@ -159,6 +159,9 @@ class EvidenceSink:
         self._queue: asyncio.Queue[PendingReceipt] | None = None
         self._queue_loop: asyncio.AbstractEventLoop | None = None
         self._flusher: asyncio.Task[None] | None = None
+        # Cancelling a to_thread await does not stop its filesystem writer.
+        # Keep that task reachable until shutdown observes its completion.
+        self._inflight: asyncio.Task[int] | None = None
         # No-running-loop path: LiteLLM's sync callbacks can fire on executor
         # threads. A stdlib queue + daemon worker thread keeps enqueue()
         # synchronous and exact there; both paths converge on _persist_batch
@@ -294,6 +297,9 @@ class EvidenceSink:
         """Boot the background flusher task (idempotent)."""
         if self.read_only:
             raise RuntimeError("read-only sinks inspect; they do not flush")
+        if self._inflight is not None:
+            await asyncio.shield(self._inflight)
+            self._inflight = None
         self._require_queue()
         if self._flusher is None or self._flusher.done():
             self._flusher = asyncio.create_task(
@@ -303,8 +309,9 @@ class EvidenceSink:
     async def aclose(self, timeout_s: float = 10.0) -> None:
         """Stop both drain lanes and persist every queued receipt."""
         flusher = self._flusher
-        if flusher is not None and not flusher.done():
-            flusher.cancel()
+        if flusher is not None:
+            if not flusher.done():
+                flusher.cancel()
             try:
                 async with asyncio.timeout(timeout_s):
                     await flusher
@@ -314,10 +321,23 @@ class EvidenceSink:
                 raise TimeoutError(
                     f"sink flusher shutdown exceeded {timeout_s}s"
                 ) from exc
+        if self._inflight is not None:
+            try:
+                async with asyncio.timeout(timeout_s):
+                    await asyncio.shield(self._inflight)
+            except TimeoutError as exc:
+                raise TimeoutError(
+                    f"sink in-flight write exceeded {timeout_s}s; shutdown is incomplete"
+                ) from exc
+            self._inflight = None
         self._worker_stop.set()
         worker = self._worker
         if worker is not None and worker.is_alive():
             await asyncio.to_thread(worker.join, timeout_s)
+            if worker.is_alive():
+                raise TimeoutError(
+                    f"sink worker shutdown exceeded {timeout_s}s; shutdown is incomplete"
+                )
         queue = self._queue
         deadline = time.monotonic() + timeout_s
         while queue is not None and not queue.empty():
@@ -412,7 +432,9 @@ class EvidenceSink:
             batch = [first]
             while len(batch) < self.batch_size and not queue.empty():
                 batch.append(queue.get_nowait())
-            await asyncio.to_thread(self._persist_batch, batch)
+            self._inflight = asyncio.create_task(asyncio.to_thread(self._persist_batch, batch))
+            await asyncio.shield(self._inflight)
+            self._inflight = None
 
     def _persist_until_empty(self) -> None:
         queue = self._queue

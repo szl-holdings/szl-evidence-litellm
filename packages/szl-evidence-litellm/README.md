@@ -35,6 +35,12 @@ on executor threads with no event loop, so the sink runs two drain lanes
 (an asyncio flusher and a stdlib-queue worker thread) that converge on one
 serialized persistence path.
 
+At async shutdown, `await logger.aclose()` waits for a batch already removed
+from the queue to finish writing and surfaces a failed flusher. A sink-level
+`aclose(timeout_s=...)` timeout means shutdown is incomplete; its in-flight
+write remains awaitable by a later `aclose()` call. A timed-out worker is not
+reported as stopped. This does not make the in-process queue crash-durable.
+
 **2. Explicit fail-open vs fail-closed, per policy.** The one question an
 evidence layer must answer honestly: *what happens to the user's request
 when the evidence machinery fails?* This package has two named answers and
