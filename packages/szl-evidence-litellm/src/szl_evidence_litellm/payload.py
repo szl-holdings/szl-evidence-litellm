@@ -222,7 +222,10 @@ def build_attempt_receipt(
             bodies["response"] = _write_body(Path(bodies_dir), response_doc)
         evidence_doc["bodies"] = bodies
 
-    evidence_bytes = jcs_canon_bytes(jsonable(evidence_doc))
+    # Return the same normalized document whose bytes the receipt commits to.
+    # The sink canonicalizes this document again when writing its sidecar.
+    evidence_doc = jsonable(evidence_doc)
+    evidence_bytes = jcs_canon_bytes(evidence_doc)
     evidence_digest = sha256_hex(evidence_bytes)
     evidence_uri = f"evidence/{evidence_digest}.json"
 
