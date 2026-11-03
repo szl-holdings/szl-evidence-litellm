@@ -39,7 +39,7 @@ class TestBatchingAndFlush:
             assert later["prev"] == earlier["entry_digest"]
         report = verify_sink(sink.directory)
         assert report["ok"], report["findings"]
-        assert report["sidecars"] == {"checked": 5, "missing": 0, "mismatched": 0}
+        assert report["sidecars"] == {"checked": 5, "missing": 0, "mismatched": 0, "invalid": 0}
 
     def test_evidence_sidecars_materialize(self, sink, policy):
         pending = make_pending(policy)

@@ -74,6 +74,23 @@ class TestCanon:
         result = run_cli("canon", str(src))
         assert result.returncode == 3
 
+    @pytest.mark.parametrize("text", ['{"x":1,"x":2}', r'{"x":"\ud800"}'])
+    @pytest.mark.parametrize("existing_output", [False, True])
+    def test_canon_rejects_non_ijson_without_writing_output(self, tmp_path, text, existing_output):
+        src = tmp_path / "ambiguous.json"
+        src.write_text(text, encoding="utf-8")
+        canonical = tmp_path / "ambiguous.json.canon.json"
+        if existing_output:
+            canonical.write_bytes(b"previous artifact")
+        result = run_cli("canon", str(src), "--json")
+        assert result.returncode == 3, result.stdout + result.stderr
+        assert "not canonicalizable JSON" in result.stderr
+        assert "Traceback" not in result.stderr
+        if existing_output:
+            assert canonical.read_bytes() == b"previous artifact"
+        else:
+            assert not canonical.exists()
+
 
 class TestKeygenSignVerify:
     def _keygen(self, tmp_path, name="operator"):
