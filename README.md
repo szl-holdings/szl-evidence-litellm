@@ -120,3 +120,5 @@ Internet-Draft format kept in `szl-platform` under
 It has not been submitted to the IETF, and the IETF datatracker has no document
 under that name. A copy is deposited on Zenodo as a technical note,
 [doi:10.5281/zenodo.22217725](https://doi.org/10.5281/zenodo.22217725).
+
+Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
