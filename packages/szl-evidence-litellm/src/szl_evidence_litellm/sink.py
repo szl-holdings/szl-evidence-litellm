@@ -141,7 +141,7 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError("duplicate sidecar JSON key")
+            raise ValueError("duplicate JSON key")
         result[key] = value
     return result
 
@@ -640,8 +640,11 @@ class EvidenceSink:
                 if not line:
                     continue
                 try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError as exc:
+                    # A duplicate property can be discarded by json.loads
+                    # without changing either stored digest. Reject it before
+                    # verification or a later append can normalize history.
+                    out.append(json.loads(line, object_pairs_hook=_unique_json_object))
+                except ValueError as exc:
                     raise SinkBootError(
                         f"{path}:{lineno}: unreadable chain line ({exc}) — "
                         "the ledger may be torn; refusing to continue"
