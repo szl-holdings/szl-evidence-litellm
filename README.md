@@ -26,10 +26,10 @@ loudly under reorder, truncation, replay, fork, or field-level tamper.
 This repository is the standalone distribution of two packages developed in
 the SZL Holdings monorepo (`szl-platform`):
 
-| Package | Version | Role |
+| Package | Source version (unreleased) | Role |
 |---|---|---|
-| `szl-receipts` | 14.0.2 | Trust core: RFC 8785 JCS, chunked byte digests, DSSE/in-toto envelopes, Ed25519, hash-chained append-only ledger |
-| `szl-evidence-litellm` | 0.1.2 | The LiteLLM callback plugin: synchronous receipt construction, asynchronous bounded-queue persistence, explicit fail-open/fail-closed policy, per-attempt deployment capture, OpenTelemetry mapping |
+| `szl-receipts` | 14.0.3 | Trust core: RFC 8785 JCS, chunked byte digests, DSSE/in-toto envelopes, Ed25519, hash-chained append-only ledger |
+| `szl-evidence-litellm` | 0.1.3 | The LiteLLM callback plugin: synchronous receipt construction, asynchronous bounded-queue persistence, explicit fail-open/fail-closed policy, per-attempt deployment capture, OpenTelemetry mapping |
 
 Provenance: the last full export was from
 `szl-platform@4f2b5f28f8c35daa81522d1dbc605f373df5b07c` (2026-08-31). Later
@@ -48,10 +48,10 @@ depends on `szl-receipts>=14.0`, so one command installs both:
 pip install 'szl-evidence-litellm[litellm,proxy]'
 ```
 
-`main` has two plugin fixes from `szl-platform` that are not in 0.1.2 yet:
-`flush_sync()` now drains the thread lane or raises (#16), and the ledger file
-is replaced crash-atomically (#17). To run `main`, install from this
-repository, trust core first:
+The source candidates above include additional persistence, shutdown, sidecar,
+and JSON-integrity fixes that are not in those PyPI releases. See
+[CHANGELOG.md](CHANGELOG.md) for the package-specific changes. To run the source
+candidates, install from this repository, trust core first:
 
 ```bash
 git clone https://github.com/szl-holdings/szl-evidence-litellm.git
