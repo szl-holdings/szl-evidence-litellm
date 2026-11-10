@@ -37,7 +37,7 @@ from .receipt import (
     verify_receipt,
 )
 
-__version__ = "14.0.2"
+__version__ = "14.0.3"
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",

@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "szl-receipts"
-version = "14.0.2"
+version = "14.0.3"
 description = "Cryptographic receipt core for the SZL Holdings estate: RFC 8785 JCS, DSSE/Ed25519, in-toto statements, hash-chained GovernedAction receipts."
 readme = "README.md"
 requires-python = ">=3.11"
