@@ -34,7 +34,7 @@ keywords = ["litellm", "receipts", "dsse", "audit", "evidence", "otel", "genai"]
 dependencies = ["szl-receipts>=14.0", "cryptography>=42"]
 
 [project.optional-dependencies]
-litellm = ["litellm>=1.40"]
+litellm = ["litellm>=1.83.7"]
 proxy = ["fastapi>=0.110", "uvicorn>=0.29"]
 dev = ["pytest"]
 
