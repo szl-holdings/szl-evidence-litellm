@@ -2,15 +2,21 @@
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
+# Repository-root placeholder, never built or published. The released
+# distributions live in packages/szl-evidence-litellm (PyPI 0.1.2 = tag
+# szl-evidence-litellm-v0.1.2; main carries 0.1.3, unreleased) and
+# packages/szl-receipts. The old root name/version (szl-evidence-litellm 0.1.0)
+# made estate scanners report the source as behind PyPI.
 [project]
-name = "szl-evidence-litellm"
-version = "0.1.0"
+name = "szl-evidence-litellm-monorepo"
+version = "0.0.0"
 description = "Tamper-evident, hash-chained receipts for every LiteLLM request — standalone distribution of szl-receipts + the SZL evidence plugin"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "Stephen Lutar", email = "stephen@szlholdings.com" }]
 dependencies = []
+classifiers = ["Private :: Do Not Upload"]
 
 [project.urls]
 Homepage = "https://a-11-oy.com"
