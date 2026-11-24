@@ -1,0 +1,52 @@
+{
+  "generated": "2026-11-24T133339Z",
+  "ruling_nonce": "NEXT2-20261124T132125Z",
+  "ruling_item": "A",
+  "upstream_status": "DEAD_REPO_404 (gh api rc=1), raw.githubusercontent 404, github.com serves 404 page; org invariant-systems-ai alive; checked 2026-11-24T133339Z",
+  "upstream_cached_secondhand": {
+    "source": "web search-index snapshot of the repo README, retrieved 2026-11-24T133339Z",
+    "repo": "invariant-systems-ai/inference-receipts",
+    "warning": "SECONDHAND CACHE: repo is 404 as of this date; no pinned revision can be cited; facts below are from the cached README text, NOT from a verifiable pinned git revision",
+    "cached_readme_claims": {
+      "paper": "Inference Receipts: Lightweight Cryptographic Commitment Chains for Auditable Generative AI, Noah Erlwein, Invariant Systems, arXiv preprint (2026)",
+      "trust_model": "honest-emitter, Certificate-Transparency-analogous",
+      "granularity": "per-session, per-forward-pass, per-token sample receipts",
+      "verifier": "standalone replay_verification.py, Python 3.10+, no external deps",
+      "files": [
+        ".gitignore",
+        "LICENSE Apache-2.0",
+        "NOTICE",
+        "README.md",
+        "benchmark_results.json",
+        "oracle_receipt_sample.json",
+        "replay_verification.py",
+        "sample_receipts.json"
+      ],
+      "license": "Apache-2.0 + patent notice"
+    }
+  },
+  "related_not_conflated": {
+    "Finest-AI/inference-receipts": "separate project (signed content-free record, forty-line verifier) - NOT used as substitute evidence",
+    "IETF draft-tsyrulnikov-rats-attested-inference-receipt-02": "separate lineage, not cited as the paper artifacts"
+  },
+  "local": {
+    "repo": "szl-holdings/szl-evidence-litellm",
+    "pinned_sha": "9da66042808001be679bd2950678b5115e5aac85",
+    "branch_base": "origin/main",
+    "file_count": 77,
+    "packages": "szl-evidence-litellm (litellm plugin/proxy/sink/payload/modes/otel/cli) + szl-receipts (chain/digests/dsse/jcs/receipt/naming/outcome/cli)",
+    "verified": {
+      "package_tests": "24 test files across both packages",
+      "chain_module_lines": 335,
+      "readme_chars": 6061,
+      "manifest_chars": 1165
+    },
+    "unexecuted": [
+      "no local code executed in this study",
+      "no interop verification possible: upstream dead"
+    ]
+  },
+  "judgments": {
+    "status": "NO PARITY CLAIM POSSIBLE: upstream primary source unavailable (404). This matrix records measured local facts and secondhand cached upstream claims only."
+  }
+}
